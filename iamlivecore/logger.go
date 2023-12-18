@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"github.com/kenshaw/baseconv"
 	"log"
 	"net/url"
 	"reflect"
@@ -11,41 +12,25 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
-
-	"github.com/buger/goterm"
-	"github.com/kenshaw/baseconv"
-	"github.com/ucarion/urlpath"
-	"github.com/oliveagle/jsonpath"
 )
 
 //go:embed map.json
 var bIAMMap []byte
 
-//go:embed azuremap.json
-var bAzureIAMMap []byte
-
-//go:embed gcpmap.json
-var bGCPIAMMap []byte
-
 //go:embed iam_definition.json
 var bIAMSAR []byte
 
 var callLog []Entry
-var gcpCallLog []string
-var azureCallLog []AzureEntry
 
 type AzureEntry struct {
-	HTTPMethod          string
-	Path                string
-	Parameters          map[string][]string
-	Body []byte
+	HTTPMethod string
+	Path       string
+	Parameters map[string][]string
+	Body       []byte
 }
 
 // JSON maps
 var iamMap iamMapBase
-var azureIamMap azureIamMapBase
-var gcpIamMap gcpIamMapBase
 var iamDef []iamDefService
 
 // Entry is a single CSM entry
@@ -74,36 +59,27 @@ type IAMPolicy struct {
 }
 
 type AzureIAMPolicy struct {
-	Name string `json:"Name"`
-	IsCustom bool `json:"IsCustom"`
-	Description string `json:"Description"`
-	Actions []string `json:"Actions"`
-	DataActions []string `json:"DataActions"`
-	NotDataActions []string `json:"NotDataActions"`
+	Name             string   `json:"Name"`
+	IsCustom         bool     `json:"IsCustom"`
+	Description      string   `json:"Description"`
+	Actions          []string `json:"Actions"`
+	DataActions      []string `json:"DataActions"`
+	NotDataActions   []string `json:"NotDataActions"`
 	AssignableScopes []string `json:"AssignableScopes"`
 }
 
 func loadMaps() {
 	if *providerFlag == "aws" {
 		err := json.Unmarshal(bIAMMap, &iamMap)
+
 		if err != nil {
 			log.Fatal(err)
 		}
+
 		err = json.Unmarshal(bIAMSAR, &iamDef)
+
 		if err != nil {
 			panic(err)
-		}
-	}
-	if *providerFlag == "azure" {
-		err := json.Unmarshal(bAzureIAMMap, &azureIamMap)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-	if *providerFlag == "gcp" {
-		err := json.Unmarshal(bGCPIAMMap, &gcpIamMap)
-		if err != nil {
-			log.Fatal(err)
 		}
 	}
 }
@@ -119,40 +95,7 @@ func GetPolicyDocument() []byte {
 			Statement: []Statement{},
 		}
 
-		if *modeFlag == "csm" {
-			var actions []string
-
-			for _, entry := range callLog {
-				if *failsonlyFlag && (entry.FinalHTTPStatusCode >= 200 && entry.FinalHTTPStatusCode <= 299) {
-					continue
-				}
-
-				newActions := getDependantActions(getActions(entry.Service, entry.Method))
-				for _, newAction := range newActions {
-					foundAction := false
-
-					for _, action := range actions {
-						if action == newAction {
-							foundAction = true
-							break
-						}
-					}
-					if !foundAction {
-						actions = append(actions, newAction)
-					}
-				}
-			}
-
-			if *sortAlphabeticalFlag {
-				sort.Strings(actions)
-			}
-
-			policy.Statement = append(policy.Statement, Statement{
-				Effect:   "Allow",
-				Resource: "*",
-				Action:   actions,
-			})
-		} else if *modeFlag == "proxy" {
+		if *modeFlag == "proxy" {
 			for _, entry := range callLog {
 				if *failsonlyFlag && (entry.FinalHTTPStatusCode >= 200 && entry.FinalHTTPStatusCode <= 299) {
 					continue
@@ -178,94 +121,6 @@ func GetPolicyDocument() []byte {
 		}
 
 		doc, err := json.MarshalIndent(policy, "", "    ")
-		if err != nil {
-			panic(err)
-		}
-		return doc
-	}
-	if *providerFlag == "azure" {
-		actionsMap := make(map[string]bool)
-		dataActionsMap := make(map[string]bool)
-
-		for _, entry := range azureCallLog {
-			for pathName, pathObj := range azureIamMap[strings.ToUpper(entry.HTTPMethod)] {
-				pathmatch := urlpath.New(strings.ReplaceAll(strings.ReplaceAll(pathName, "{", ":"), "}", ""))
-				pathmatchdata, ok := pathmatch.Match(entry.Path)
-				if ok {
-				PermissionLoop:
-					for permissionName, permissionObj := range pathObj {
-						if permissionObj.Condition.BodyPathExists != "" {
-							var jsondata interface{}
-							json.Unmarshal(entry.Body, &jsondata)
-							_, err := jsonpath.JsonPathLookup(jsondata, permissionObj.Condition.BodyPathExists)
-							if err != nil {
-								continue PermissionLoop
-							}
-						}
-						for pathName, pathValue := range permissionObj.Condition.PathEquals {
-							if pathmatchdata.Params[pathName] != pathValue {
-								continue PermissionLoop
-							}
-						}
-						if permissionObj.IsDataAction {
-							dataActionsMap[permissionName] = true
-						} else {
-							actionsMap[permissionName] = true
-						}
-					}
-				}
-			}
-		}
-
-		actionsList := make([]string, len(actionsMap))
-		i := 0
-		for k := range actionsMap {
-			actionsList[i] = k
-			i++
-		}
-		sort.Strings(actionsList)
-
-		dataActionsList := make([]string, len(dataActionsMap))
-		i = 0
-		for k := range dataActionsMap {
-			dataActionsList[i] = k
-			i++
-		}
-		sort.Strings(dataActionsList)
-
-		returnPolicy := AzureIAMPolicy{
-			Actions: actionsList,
-			DataActions: dataActionsList,
-			NotDataActions: make([]string, 0),
-			AssignableScopes: make([]string, 0),
-			IsCustom: true,
-		}
-
-		doc, err := json.MarshalIndent(returnPolicy, "", "    ")
-		if err != nil {
-			panic(err)
-		}
-		return doc
-	}
-	if *providerFlag == "gcp" {
-		actionsMap := make(map[string]bool)
-
-		for _, entry := range gcpCallLog {
-			entryServiceName := strings.Split(entry, ".")[0]
-			for _, mapPermission := range gcpIamMap.API[entryServiceName].Methods[entry].Permissions {
-				actionsMap[mapPermission.Name] = true
-			}
-		}
-
-		actionsList := make([]string, len(actionsMap))
-		i := 0
-		for k := range actionsMap {
-			actionsList[i] = k
-			i++
-		}
-		sort.Strings(actionsList)
-
-		doc, err := json.MarshalIndent(actionsList, "", "    ")
 		if err != nil {
 			panic(err)
 		}
@@ -306,44 +161,11 @@ func aggregatePolicy(policy IAMPolicy) IAMPolicy {
 	return policy
 }
 
-func handleLoggedCall() {
-	// when making many calls in parallel, the terminal can be glitchy
-	// if we flush too often, optional flush on timer
-	if *refreshRateFlag == 0 {
-		writePolicyToTerminal()
-	}
-}
+func printCallInfo(entry Entry) {
+	statements := getStatementsForProxyCall(entry)
 
-func countRune(s string, r rune) int {
-	count := 0
-	for _, c := range s {
-		if c == r {
-			count++
-		}
-	}
-	return count
-}
-
-func writePolicyToTerminal() {
-	if (len(callLog) == 0 && len(azureCallLog) == 0 && len(gcpCallLog) == 0) || *backgroundFlag {
-		return
-	}
-
-	policyDoc := string(GetPolicyDocument())
-
-	if *debugFlag {
-		fmt.Println(policyDoc)
-	} else {
-		policyHeight := countRune(policyDoc, '\n') + 1
-
-		goterm.Clear()
-		goterm.MoveCursor(1, 1)
-		if goterm.Height() < policyHeight {
-			fmt.Println("\n\n" + policyDoc)
-		} else {
-			goterm.Println(policyDoc)
-			goterm.Flush()
-		}
+	for _, statement := range statements {
+		fmt.Printf("%s %s on %s\n", statement.Effect, statement.Action, statement.Resource)
 	}
 }
 
@@ -366,43 +188,6 @@ type iamMapBase struct {
 	SDKMethodIAMMappings     map[string][]iamMapMethod `json:"sdk_method_iam_mappings"`
 	SDKServiceMappings       map[string]string         `json:"sdk_service_mappings"`
 	SDKPermissionlessActions []string                  `json:"sdk_permissionless_actions"`
-}
-
-type azureIamMapBase map[string]AzurePath
-
-type AzurePath map[string]AzurePermission
-
-type AzurePermission map[string]AzurePermissionDetail
-
-type AzurePermissionDetail struct {
-	Automated bool `json:"automated"`
-	IsDataAction bool `json:"isDataAction"`
-	Condition AzureCondition `json:"condition"`
-}
-
-type AzureCondition struct {
-	PathEquals map[string]string `json:"pathEquals"`
-	BodyPathExists string `json:"bodyPathExists"`
-}
-
-type gcpIamMapBase struct {
-	API map[string]GCPAPIMapService `json:"api"`
-}
-
-type GCPAPIMapService struct {
-	Methods map[string]GCPAPIMapMethod `json:"methods"`
-}
-
-type GCPAPIMapMethod struct {
-	Permissions []GCPAPIMapPermission `json:"permissions"`
-}
-
-type GCPAPIMapPermission struct {
-	Name string `json:"name"`
-}
-
-type mappingInfoItem struct {
-	Action string `json:"action"`
 }
 
 type iamDefService struct {
@@ -500,30 +285,6 @@ func getActions(service, method string) []string {
 	return []string{
 		fmt.Sprintf("%s:%s", strings.ToLower(service), method),
 	}
-}
-
-func setTerminalRefresh() {
-	if *refreshRateFlag <= 0 {
-		*refreshRateFlag = 1
-	}
-
-	ticker := time.NewTicker(time.Duration(*refreshRateFlag) * time.Second)
-	quit := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				writePolicyToTerminal()
-			case <-quit:
-				ticker.Stop()
-				return
-			}
-		}
-	}()
-}
-
-type resourceType struct {
-	ResourceType string `json:"resourceType"`
 }
 
 func resolveSpecials(arn string, call Entry, mandatory bool, resourceArnTemplate *string) []string {

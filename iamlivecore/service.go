@@ -7,9 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"runtime/pprof"
-
-	"github.com/mitchellh/go-homedir"
-	"gopkg.in/ini.v1"
 )
 
 // CLI args
@@ -41,68 +38,13 @@ func parseConfig() {
 	sortAlphabetical := false
 	host := "127.0.0.1"
 	mode := "csm"
-	bindAddr := "127.0.0.1:10080"
+	bindAddr := "0.0.0.0:10080"
 	caBundle := "~/.iamlive/ca.pem"
 	caKey := "~/.iamlive/ca.key"
 	accountID := ""
 	background := false
 	debug := false
 	forceWildcardResource := false
-
-	cfgfile, err := homedir.Expand("~/.iamlive/config")
-	if err == nil {
-		cfg, err := ini.Load(cfgfile)
-		if err == nil {
-			if cfg.Section("").HasKey("provider") {
-				provider = cfg.Section("").Key("provider").String()
-			}
-			if cfg.Section("").HasKey("set-ini") {
-				setIni, _ = cfg.Section("").Key("set-ini").Bool()
-			}
-			if cfg.Section("").HasKey("profile") {
-				profile = cfg.Section("").Key("profile").String()
-			}
-			if cfg.Section("").HasKey("fails-only") {
-				failsOnly, _ = cfg.Section("").Key("fails-only").Bool()
-			}
-			if cfg.Section("").HasKey("output-file") {
-				outputFile = cfg.Section("").Key("output-file").String()
-			}
-			if cfg.Section("").HasKey("refresh-rate") {
-				refreshRate, _ = cfg.Section("").Key("refresh-rate").Int()
-			}
-			if cfg.Section("").HasKey("sort-alphabetical") {
-				sortAlphabetical, _ = cfg.Section("").Key("sort-alphabetical").Bool()
-			}
-			if cfg.Section("").HasKey("host") {
-				host = cfg.Section("").Key("host").String()
-			}
-			if cfg.Section("").HasKey("mode") {
-				mode = cfg.Section("").Key("mode").String()
-			}
-			if cfg.Section("").HasKey("bind-addr") {
-				bindAddr = cfg.Section("").Key("bind-addr").String()
-			}
-			if cfg.Section("").HasKey("ca-bundle") {
-				caBundle = cfg.Section("").Key("ca-bundle").String()
-			}
-			if cfg.Section("").HasKey("ca-key") {
-				caKey = cfg.Section("").Key("ca-key").String()
-			}
-			if cfg.Section("").HasKey("account-id") {
-				accountID = cfg.Section("").Key("account-id").String()
-			}
-			if cfg.Section("").HasKey("background") {
-				background, _ = cfg.Section("").Key("background").Bool()
-			}
-			if cfg.Section("").HasKey("debug") {
-				debug, _ = cfg.Section("").Key("debug").Bool()
-			}
-			if cfg.Section("").HasKey("force-wildcard-resource") {
-				forceWildcardResource, _ = cfg.Section("").Key("force-wildcard-resource").Bool()
-			}
-		}
-	}
 
 	providerFlag = flag.String("provider", provider, "the cloud service provider to intercept calls for")
 	setiniFlag = flag.Bool("set-ini", setIni, "when set, the .aws/config file will be updated to use the CSM monitoring or CA bundle and removed when exiting")
@@ -154,71 +96,7 @@ func Run() {
 		defer pprof.StopCPUProfile()
 	}
 
-	if *refreshRateFlag != 0 && *providerFlag == "aws" {
-		setTerminalRefresh()
-	}
-
-	if *providerFlag == "aws" {
-		setINIConfigAndFileFlush()
-	}
-	
 	loadMaps()
-
-	if *modeFlag == "csm" && *providerFlag == "aws" {
-		listenForEvents()
-		handleLoggedCall()
-	} else if *modeFlag == "proxy" {
-		readServiceFiles()
-		createProxy(*bindAddrFlag)
-	} else {
-		fmt.Println("ERROR: unknown mode")
-	}
-}
-
-func RunWithArgs(provider string, setIni bool, profile string, failsOnly bool, outputFile string, refreshRate int, sortAlphabetical bool, host, mode, bindAddr, caBundle, caKey, accountID string, background, debug, forceWildcardResource bool) {
-	providerFlag = &provider
-	setiniFlag = &setIni
-	profileFlag = &profile
-	failsonlyFlag = &failsOnly
-	outputFileFlag = &outputFile
-	refreshRateFlag = &refreshRate
-	sortAlphabeticalFlag = &sortAlphabetical
-	hostFlag = &host
-	modeFlag = &mode
-	bindAddrFlag = &bindAddr
-	caBundleFlag = &caBundle
-	caKeyFlag = &caKey
-	accountIDFlag = &accountID
-	backgroundFlag = &background
-	debugFlag = &debug
-	forceWildcardResourceFlag = &forceWildcardResource
-
-	if *cpuProfileFlag != "" {
-		f, err := os.Create(*cpuProfileFlag)
-		if err != nil {
-			log.Fatal(err)
-		}
-		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
-	}
-
-	if *refreshRateFlag != 0 && *providerFlag == "aws" {
-		setTerminalRefresh()
-	}
-
-	if *providerFlag == "aws" {
-		setINIConfigAndFileFlush()
-	}
-
-	loadMaps()
-
-	if *modeFlag == "csm" && *providerFlag == "aws" {
-		listenForEvents()
-		handleLoggedCall()
-	} else if *modeFlag == "proxy" {
-		readServiceFiles()
-		createProxy(*bindAddrFlag)
-	} else {
-		fmt.Println("ERROR: unknown mode")
-	}
+	readServiceFiles()
+	createProxy(*bindAddrFlag)
 }

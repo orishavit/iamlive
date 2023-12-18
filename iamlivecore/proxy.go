@@ -43,11 +43,8 @@ find . -empty -type d -delete
 find . ! -name "api-list.json" -type f -exec sh -c "cat <<< \$(jq -c '{basePath,rootUrl,resources: .resources} | del(.. | .description?)' {}) > {}" \;
 ```
 */
-//go:embed google-api-go-client/*
-var gcpServiceFiles embed.FS
 
 var serviceDefinitions []ServiceDefinition
-var gcpServiceDefinitions []GCPServiceDefinition
 
 func loadCAKeys() error {
 	var caCert []byte
@@ -173,13 +170,12 @@ func createProxy(addr string) {
 
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.Logger = log.New(io.Discard, "", log.LstdFlags)
+	proxy.Verbose = true
 	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 	proxy.OnRequest().DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) { // TODO: Move to onResponse for HTTP response codes
 		var body []byte
 
 		isAWSHostname, _ := regexp.MatchString(`^.*\.amazonaws\.com(?:\.cn)?$`, req.Host)
-		isAzureHostname, _ := regexp.MatchString(`^(?:management\.azure\.com)|(?:management\.core\.windows\.net)$`, req.Host)
-		isGCPHostname, _ := regexp.MatchString(`^.*\.googleapis\.com$`, req.Host)
 
 		if isAWSHostname && *providerFlag == "aws" {
 			if *debugFlag {
@@ -187,18 +183,6 @@ func createProxy(addr string) {
 			}
 			body, _ = ioutil.ReadAll(req.Body)
 			handleAWSRequest(req, body, 200)
-		} else if isAzureHostname && *providerFlag == "azure" {
-			if *debugFlag {
-				dumpReq(req)
-			}
-			body, _ = ioutil.ReadAll(req.Body)
-			handleAzureRequest(req, body, 200)
-		} else if isGCPHostname && *providerFlag == "gcp" {
-			if *debugFlag {
-				dumpReq(req)
-			}
-			body, _ = ioutil.ReadAll(req.Body)
-			handleGCPRequest(req, body, 200)
 		} else {
 			return req, nil
 		}
@@ -207,6 +191,7 @@ func createProxy(addr string) {
 
 		return req, nil
 	})
+	log.Printf("Starting proxy on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, proxy))
 }
 
@@ -252,43 +237,6 @@ type ServiceDefinitionMetadata struct {
 	UID                 string `json:"uid"`
 }
 
-type AzureTemplate struct {
-	Resources []AzureTemplateResource `json:"resources"`
-}
-
-type AzureTemplateResource struct {
-	Name       string      `json:"name"`
-	Type       string      `json:"type"`
-	Properties interface{} `json:"properties"`
-}
-
-type GCPAPIListFile struct {
-	Items []GCPAPIListItem `json:"items"`
-}
-
-type GCPAPIListItem struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-}
-
-type GCPServiceDefinition struct {
-	RootURL    string `json:"rootUrl"`
-	BasePath   string `json:"basePath"`
-	RootDomain string
-	Resources  map[string]GCPResourceDefinition `json:"resources"`
-}
-
-type GCPResourceDefinition struct {
-	Methods   map[string]GCPMethodDefinition   `json:"methods"`
-	Resources map[string]GCPResourceDefinition `json:"resources"`
-}
-
-type GCPMethodDefinition struct {
-	FlatPath   string `json:"flatPath"`
-	HTTPMethod string `json:"httpMethod"`
-	ID         string `json:"id"`
-}
-
 func readServiceFiles() {
 	if *providerFlag == "aws" {
 		files, err := serviceFiles.ReadDir("service")
@@ -313,51 +261,6 @@ func readServiceFiles() {
 			}
 
 			serviceDefinitions = append(serviceDefinitions, def)
-		}
-	}
-	if *providerFlag == "gcp" {
-		file, err := gcpServiceFiles.Open("google-api-go-client/api-list.json")
-		if err != nil {
-			panic(err)
-		}
-
-		data, err := ioutil.ReadAll(file)
-		if err != nil {
-			panic(err)
-		}
-
-		var apiList GCPAPIListFile
-		if json.Unmarshal(data, &apiList) != nil {
-			panic(err)
-		}
-
-		for _, apiItem := range apiList.Items {
-			version := strings.ToLower(strings.ReplaceAll(apiItem.Version, "_", "/"))
-			if version == "alpha" {
-				version = "v0.alpha"
-			} else if version == "beta" {
-				version = "v0.beta"
-			}
-
-			file, err := gcpServiceFiles.Open("google-api-go-client/" + strings.ToLower(apiItem.Name) + "/" + version + "/" + strings.ToLower(apiItem.Name) + "-api.json")
-			if err != nil {
-				panic(err)
-			}
-
-			data, err := ioutil.ReadAll(file)
-			if err != nil {
-				panic(err)
-			}
-
-			var def GCPServiceDefinition
-			if json.Unmarshal(data, &def) != nil {
-				panic(err)
-			}
-
-			url, _ := url.Parse(def.RootURL)
-			def.RootDomain = url.Hostname()
-
-			gcpServiceDefinitions = append(gcpServiceDefinitions, def)
 		}
 	}
 }
@@ -733,7 +636,7 @@ func handleAWSRequest(req *http.Request, body []byte, respCode int) {
 		service = selectedCandidate.Service
 	}
 
-	callLog = append(callLog, Entry{
+	entry := Entry{
 		Region:              region,
 		Type:                "ProxyCall",
 		Service:             service,
@@ -742,81 +645,9 @@ func handleAWSRequest(req *http.Request, body []byte, respCode int) {
 		URIParameters:       uriparams,
 		FinalHTTPStatusCode: respCode,
 		AccessKey:           accessKey,
-	})
-
-	handleLoggedCall()
-}
-
-var azurermregex = regexp.MustCompile(`^/subscriptions/.+/resourcegroups/.+/providers/Microsoft\.Resources/deployments/.+`)
-
-func handleAzureRequest(req *http.Request, body []byte, respCode int) {
-	host := req.Host
-
-	if host != "management.azure.com" { //} else if host == "management.core.windows.net" {
-		return
 	}
 
-	azureCallLog = append(azureCallLog, AzureEntry{
-		HTTPMethod: req.Method,
-		Path:       req.URL.Path,
-		Parameters: req.URL.Query(),
-		Body:       body,
-	})
-
-	// Handle AzureRM deployments (inline only)
-	if req.Method == "PUT" { // TODO: other similar methods
-		if azurermregex.MatchString(req.URL.Path) {
-			data := struct {
-				Properties struct {
-					Template interface{} `json:"template"`
-				} `json:"properties"`
-			}{}
-			err := json.Unmarshal(body, &data)
-			if err != nil {
-				return
-			}
-
-			var template AzureTemplate
-
-			templateString, ok := data.Properties.Template.(string)
-			if ok {
-				err := json.Unmarshal([]byte(templateString), &template)
-				if err != nil {
-					return
-				}
-			} else {
-				templateJSON, _ := json.Marshal(data.Properties.Template)
-				err = json.Unmarshal(templateJSON, &template)
-				if err != nil {
-					return
-				}
-			}
-
-		ResourceLoop:
-			for _, azureResource := range template.Resources {
-				fmt.Println(azureResource.Name)
-				fmt.Println(azureResource.Type)
-
-				for pathName, pathObj := range azureIamMap["PUT"] {
-					for permissionName := range pathObj {
-						if fmt.Sprintf("%s/write", azureResource.Type) == permissionName {
-							resourceJSON, _ := json.Marshal(azureResource)
-
-							azureCallLog = append(azureCallLog, AzureEntry{
-								HTTPMethod: "PUT",
-								Path:       pathName,
-								Body:       resourceJSON,
-							})
-
-							continue ResourceLoop
-						}
-					}
-				}
-			}
-		}
-	}
-
-	handleLoggedCall()
+	printCallInfo(entry)
 }
 
 func generateMethodTemplate(path string) string {
@@ -838,60 +669,6 @@ func generateMethodTemplate(path string) string {
 	}
 
 	return pathtemplate
-}
-
-func gcpProcessResource(req *http.Request, gcpResource GCPResourceDefinition, basePath string) string {
-	for _, gcpSubresource := range gcpResource.Resources {
-		apiID := gcpProcessResource(req, gcpSubresource, basePath)
-		if apiID != "" {
-			return apiID
-		}
-	}
-
-	for _, gcpMethod := range gcpResource.Methods {
-		if req.Method == gcpMethod.HTTPMethod {
-			pathtemplate := generateMethodTemplate(basePath+gcpMethod.FlatPath)
-
-			r, err := regexp.Compile(pathtemplate)
-			if err == nil && r.MatchString(req.URL.Path) {
-				return gcpMethod.ID
-			}
-		}
-	}
-
-	return ""
-}
-
-func handleGCPRequest(req *http.Request, body []byte, respCode int) {
-	host := req.Host
-	hostSplit := strings.Split(host, ".")
-	apiID := ""
-
-	if hostSplit[len(hostSplit)-1] != "com" || hostSplit[len(hostSplit)-2] != "googleapis" {
-		return
-	}
-
-	for _, gcpService := range gcpServiceDefinitions {
-		if req.Host == gcpService.RootDomain {
-			for _, gcpResource := range gcpService.Resources {
-				apiID = gcpProcessResource(req, gcpResource, gcpService.BasePath)
-				if apiID != "" {
-					break
-				}
-			}
-		}
-		if apiID != "" {
-			break
-		}
-	}
-
-	if apiID == "" {
-		return
-	}
-
-	gcpCallLog = append(gcpCallLog, apiID)
-
-	handleLoggedCall()
 }
 
 func resolvePropertyName(obj ServiceStructure, searchProp string, path string, locationPath string, shapes map[string]ServiceStructure) (ret string) {
