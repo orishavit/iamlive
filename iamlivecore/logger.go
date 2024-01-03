@@ -1,9 +1,11 @@
 package iamlivecore
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"github.com/iann0036/iamlive/iamlivecore/mapperclient"
 	"github.com/kenshaw/baseconv"
 	"log"
 	"net/url"
@@ -43,13 +45,14 @@ type Entry struct {
 	URIParameters       map[string]string
 	FinalHTTPStatusCode int    `json:"FinalHttpStatusCode"`
 	AccessKey           string `json:"AccessKey"`
+	SrcIP               string `json:"SrcIp"`
 }
 
 // Statement is a single statement within an IAM policy
 type Statement struct {
-	Effect   string      `json:"Effect"`
-	Action   []string    `json:"Action"`
-	Resource interface{} `json:"Resource"`
+	Effect   string   `json:"Effect"`
+	Action   []string `json:"Action"`
+	Resource []string `json:"Resource"`
 }
 
 // IAMPolicy is a full IAM policy
@@ -111,13 +114,6 @@ func GetPolicyDocument() []byte {
 			}
 
 			policy = aggregatePolicy(policy)
-
-			for i := 0; i < len(policy.Statement); i++ { // make any single wildcard resource a non-array
-				resource := policy.Statement[i].Resource.([]string)
-				if len(resource) == 1 {
-					policy.Statement[i].Resource = resource[0]
-				}
-			}
 		}
 
 		doc, err := json.MarshalIndent(policy, "", "    ")
@@ -137,11 +133,11 @@ func removeStatementItem(slice []Statement, i int) []Statement {
 
 func aggregatePolicy(policy IAMPolicy) IAMPolicy {
 	for i := 0; i < len(policy.Statement); i++ {
-		sort.Strings(policy.Statement[i].Resource.([]string))
+		sort.Strings(policy.Statement[i].Resource)
 		for j := i + 1; j < len(policy.Statement); j++ {
-			sort.Strings(policy.Statement[j].Resource.([]string))
+			sort.Strings(policy.Statement[j].Resource)
 
-			if reflect.DeepEqual(policy.Statement[i].Resource.([]string), policy.Statement[j].Resource.([]string)) {
+			if reflect.DeepEqual(policy.Statement[i].Resource, policy.Statement[j].Resource) {
 				policy.Statement[i].Action = append(policy.Statement[i].Action, policy.Statement[j].Action...) // combine
 				policy.Statement = removeStatementItem(policy.Statement, j)                                    // remove dupe
 				j--
@@ -155,7 +151,7 @@ func aggregatePolicy(policy IAMPolicy) IAMPolicy {
 		}
 
 		policy.Statement[i].Action = actions
-		policy.Statement[i].Resource = uniqueSlice(policy.Statement[i].Resource.([]string))
+		policy.Statement[i].Resource = uniqueSlice(policy.Statement[i].Resource)
 	}
 
 	return policy
@@ -163,10 +159,22 @@ func aggregatePolicy(policy IAMPolicy) IAMPolicy {
 
 func printCallInfo(entry Entry) {
 	statements := getStatementsForProxyCall(entry)
+	graphQLClient := mapperclient.NewClient("http://otterize-network-mapper.otterize-system.svc.cluster.local:9090")
+	var operations []mapperclient.AWSOperation
 
 	for _, statement := range statements {
-		fmt.Printf("%s %s on %s\n", statement.Effect, statement.Action, statement.Resource)
+		for _, resource := range statement.Resource {
+			log.Printf("Reporting %s %s %s", statement.Action, resource, entry.SrcIP)
+
+			operations = append(operations, mapperclient.AWSOperation{
+				Resource: resource,
+				Actions:  statement.Action,
+				SrcIp:    entry.SrcIP,
+			})
+		}
 	}
+
+	_ = graphQLClient.ReportAWSOperation(context.Background(), operations)
 }
 
 type iamMapMethod struct {

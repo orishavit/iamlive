@@ -1,0 +1,181 @@
+scalar Time # Equivalent of Go's time.Time provided by gqlgen
+
+input Destination {
+    # Could be either IP addr or hostname
+    destination: String!
+    # If destination is a hostname, this _may_ be the IP it resolves to if it is known, but is not required.
+    destinationIP: String
+    lastSeen: Time!
+}
+
+input RecordedDestinationsForSrc {
+    srcIp: String!
+    srcHostname: String!
+    destinations: [Destination!]!
+}
+
+input CaptureResults {
+    results: [RecordedDestinationsForSrc!]!
+}
+
+input SocketScanResults {
+    results: [RecordedDestinationsForSrc!]!
+}
+
+type PodLabel {
+    key: String!
+    value: String!
+}
+
+type GroupVersionKind {
+    group: String
+    version: String!
+    kind: String!
+}
+
+type OtterizeServiceIdentity {
+    name: String!
+    namespace: String!
+    labels: [PodLabel!]
+    """
+    If the service identity was resolved from a pod owner, the GroupVersionKind of the pod owner.
+    """
+    podOwnerKind: GroupVersionKind
+    """
+    If the service identity was resolved from a Kubernetes service, its name.
+    """
+    kubernetesService: String
+}
+
+enum IntentType {
+    HTTP
+    KAFKA
+    DATABASE
+    AWS
+    S3
+}
+
+enum KafkaOperation {
+    ALL
+    CONSUME
+    PRODUCE
+    CREATE
+    ALTER
+    DELETE
+    DESCRIBE
+    CLUSTER_ACTION
+    DESCRIBE_CONFIGS
+    ALTER_CONFIGS
+    IDEMPOTENT_WRITE
+}
+
+type KafkaConfig {
+    name: String!
+    operations: [KafkaOperation!]
+}
+
+type HttpResource {
+    path: String!
+    methods: [HttpMethod!]
+}
+
+enum HttpMethod {
+    GET
+    POST
+    PUT
+    DELETE
+    OPTIONS
+    TRACE
+    PATCH
+    CONNECT
+    ALL
+}
+
+type Intent {
+    client: OtterizeServiceIdentity!
+    server: OtterizeServiceIdentity!
+    type: IntentType
+    kafkaTopics: [KafkaConfig!]
+    httpResources: [HttpResource!]
+    awsActions: [String!]
+}
+
+type ServiceIntents {
+    client: OtterizeServiceIdentity!
+    intents: [OtterizeServiceIdentity!]!
+}
+
+input KafkaMapperResult {
+    srcIp: String!
+    serverPodName: String!
+    serverNamespace: String!
+    topic: String!
+    operation: String!
+    lastSeen: Time!
+}
+
+input KafkaMapperResults {
+    results: [KafkaMapperResult!]!
+}
+
+input IstioConnection {
+    srcWorkload: String!
+    srcWorkloadNamespace: String!
+    dstWorkload: String!
+    dstWorkloadNamespace: String!
+    path: String!
+    methods: [HttpMethod!]!
+    lastSeen: Time!
+}
+
+input IstioConnectionResults {
+    results: [IstioConnection!]!
+}
+
+input AWSOperation {
+    resource: String!
+    actions: [String!]!
+    srcIp: String!
+}
+
+input ServerFilter {
+    name: String!
+    namespace: String!
+}
+
+type Query {
+    """
+    Kept for backwards compatibility with CLI -
+    query intents as (source+destinations) pairs, without any additional intent info.
+    namespaces: Namespaces filter.
+    includeLabels: Labels to include in the response. Ignored if includeAllLabels is specified.
+    includeAllLabels: Return all labels for the pod in the response.
+    """
+    serviceIntents(namespaces: [String!], includeLabels: [String!], includeAllLabels: Boolean): [ServiceIntents!]!
+
+    """
+    Query intents list.
+    namespaces: Namespaces filter.
+    includeLabels: Labels to include in the response. Ignored if includeAllLabels is specified.
+    excludeLabels: Labels to exclude from the response. Ignored if includeAllLabels is specified.
+    includeAllLabels: Return all labels for the pod in the response.
+    """
+    intents(
+        namespaces: [String!],
+        includeLabels: [String!],
+        excludeServiceWithLabels: [String!],
+        includeAllLabels: Boolean,
+        server: ServerFilter,
+    ): [Intent!]!
+
+    health: Boolean!
+}
+
+type Mutation {
+    resetCapture: Boolean!
+    reportCaptureResults(results: CaptureResults!): Boolean!
+    reportSocketScanResults(results: SocketScanResults!): Boolean!
+    reportKafkaMapperResults(results: KafkaMapperResults!): Boolean!
+    reportIstioConnectionResults(results: IstioConnectionResults!): Boolean!
+    reportAWSOperation(operation: [AWSOperation!]!): Boolean!
+}

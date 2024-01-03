@@ -1,0 +1,3 @@
+mutation reportAWSOperation($operation: [AWSOperation!]!) {
+    reportAWSOperation(operation: $operation)
+}

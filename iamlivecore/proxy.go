@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"math/big"
@@ -169,7 +168,7 @@ func createProxy(addr string) {
 	}
 
 	proxy := goproxy.NewProxyHttpServer()
-	proxy.Logger = log.New(io.Discard, "", log.LstdFlags)
+	proxy.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	proxy.Verbose = true
 	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 	proxy.OnRequest().DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) { // TODO: Move to onResponse for HTTP response codes
@@ -645,6 +644,7 @@ func handleAWSRequest(req *http.Request, body []byte, respCode int) {
 		URIParameters:       uriparams,
 		FinalHTTPStatusCode: respCode,
 		AccessKey:           accessKey,
+		SrcIP:               strings.Split(req.RemoteAddr, ":")[0],
 	}
 
 	printCallInfo(entry)
