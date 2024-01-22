@@ -20,6 +20,7 @@ var sortAlphabeticalFlag *bool
 var hostFlag *string
 var modeFlag *string
 var bindAddrFlag *string
+var sslBindAddrFlag *string
 var caBundleFlag *string
 var caKeyFlag *string
 var accountIDFlag *string
@@ -39,6 +40,7 @@ func parseConfig() {
 	host := "127.0.0.1"
 	mode := "csm"
 	bindAddr := "0.0.0.0:10080"
+	sslBindAddr := "0.0.0.0:10443"
 	caBundle := "~/.iamlive/ca.pem"
 	caKey := "~/.iamlive/ca.key"
 	accountID := ""
@@ -56,6 +58,7 @@ func parseConfig() {
 	hostFlag = flag.String("host", host, "host to listen on for CSM")
 	modeFlag = flag.String("mode", mode, "the listening mode (csm,proxy)")
 	bindAddrFlag = flag.String("bind-addr", bindAddr, "the bind address for proxy mode")
+	sslBindAddrFlag = flag.String("ssl-bind-addr", sslBindAddr, "the bind address for SSL proxy mode")
 	caBundleFlag = flag.String("ca-bundle", caBundle, "the CA certificate bundle (PEM) to use for proxy mode")
 	caKeyFlag = flag.String("ca-key", caKey, "the CA certificate key to use for proxy mode")
 	accountIDFlag = flag.String("account-id", accountID, "the AWS account ID to use in policy outputs within proxy mode")
@@ -98,5 +101,5 @@ func Run() {
 
 	loadMaps()
 	readServiceFiles()
-	createProxy(*bindAddrFlag)
+	createProxy(*bindAddrFlag, *sslBindAddrFlag)
 }

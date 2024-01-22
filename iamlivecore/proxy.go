@@ -1,6 +1,7 @@
 package iamlivecore
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
@@ -14,6 +15,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -25,6 +27,7 @@ import (
 
 	mxj "github.com/clbanning/mxj/v2"
 	"github.com/iann0036/goproxy"
+	"github.com/inconshreveable/go-vhost"
 	"github.com/mitchellh/go-homedir"
 )
 
@@ -161,7 +164,7 @@ func dumpReq(req *http.Request) {
 	fmt.Printf("%v\n", string(dump))
 }
 
-func createProxy(addr string) {
+func createProxy(addr string, sslAddr string) {
 	err := loadCAKeys()
 	if err != nil {
 		log.Fatal(err)
@@ -170,6 +173,15 @@ func createProxy(addr string) {
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	proxy.Verbose = true
+	proxy.NonproxyHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Host == "" {
+			_, _ = fmt.Fprintln(w, "Cannot handle requests without Host header, e.g., HTTP 1.0")
+			return
+		}
+		req.URL.Scheme = "http"
+		req.URL.Host = req.Host
+		proxy.ServeHTTP(w, req)
+	})
 	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 	proxy.OnRequest().DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) { // TODO: Move to onResponse for HTTP response codes
 		var body []byte
@@ -191,7 +203,45 @@ func createProxy(addr string) {
 		return req, nil
 	})
 	log.Printf("Starting proxy on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, proxy))
+
+	go func() {
+		log.Fatalln(http.ListenAndServe(addr, proxy))
+	}()
+
+	// listen to the TLS ClientHello but make it a CONNECT request instead
+	ln, err := net.Listen("tcp", sslAddr)
+	if err != nil {
+		log.Fatalf("Error listening for https connections - %v", err)
+	}
+	for {
+		c, err := ln.Accept()
+		if err != nil {
+			log.Printf("Error accepting new connection - %v", err)
+			continue
+		}
+		go func(c net.Conn) {
+			tlsConn, err := vhost.TLS(c)
+			if err != nil {
+				log.Printf("Error accepting new connection - %v", err)
+			}
+			if tlsConn.Host() == "" {
+				log.Printf("Cannot support non-SNI enabled clients")
+				return
+			}
+			connectReq := &http.Request{
+				Method: "CONNECT",
+				URL: &url.URL{
+					Opaque: tlsConn.Host(),
+					Host:   net.JoinHostPort(tlsConn.Host(), "443"),
+				},
+				Host:       tlsConn.Host(),
+				Header:     make(http.Header),
+				RemoteAddr: c.RemoteAddr().String(),
+			}
+			resp := dumbResponseWriter{tlsConn}
+			proxy.ServeHTTP(resp, connectReq)
+		}(c)
+	}
 }
 
 type ServiceDefinition struct {
@@ -728,4 +778,27 @@ func resolvePropertyName(obj ServiceStructure, searchProp string, path string, l
 	}
 
 	return ""
+}
+
+type dumbResponseWriter struct {
+	net.Conn
+}
+
+func (dumb dumbResponseWriter) Header() http.Header {
+	panic("Header() should not be called on this ResponseWriter")
+}
+
+func (dumb dumbResponseWriter) Write(buf []byte) (int, error) {
+	if bytes.Equal(buf, []byte("HTTP/1.0 200 OK\r\n\r\n")) {
+		return len(buf), nil // throw away the HTTP OK response from the faux CONNECT request
+	}
+	return dumb.Conn.Write(buf)
+}
+
+func (dumb dumbResponseWriter) WriteHeader(code int) {
+	panic("WriteHeader() should not be called on this ResponseWriter")
+}
+
+func (dumb dumbResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return dumb, bufio.NewReadWriter(bufio.NewReader(dumb), bufio.NewWriter(dumb)), nil
 }
