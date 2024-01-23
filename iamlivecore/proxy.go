@@ -3,6 +3,7 @@ package iamlivecore
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -166,6 +167,14 @@ func dumpReq(req *http.Request) {
 
 func createProxy(addr string, sslAddr string) {
 	err := loadCAKeys()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	podNamespace := os.Getenv("POD_NAMESPACE")
+
+	err = CreateCertificates(context.Background(), "", "iamlive-ca", podNamespace)
+
 	if err != nil {
 		log.Fatal(err)
 	}
