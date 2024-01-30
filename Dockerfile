@@ -1,17 +1,12 @@
 FROM golang:1.21-alpine as builder
-RUN apk add --no-cache ca-certificates git protoc
-RUN apk add build-base
 
 WORKDIR /workspace
-# Copy the Go Modules manifests
-COPY go.mod go.sum ./
 
+COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-ARG TARGETOS
-ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -a -o iamlive .
+RUN CGO_ENABLED=0 go build -a -o iamlive .
 
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /otterize/iamlive
