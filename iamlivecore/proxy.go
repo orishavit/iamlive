@@ -602,7 +602,7 @@ func handleAWSRequest(req *http.Request, body []byte, respCode int) {
 									mxjXML, err := mxj.NewMapXml(body)
 									bodyXML := map[string]interface{}(mxjXML)
 									if err != nil {
-										return
+										continue
 									}
 
 									flatten(true, params, bodyXML, "")
