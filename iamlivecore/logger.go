@@ -5,8 +5,8 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"github.com/iann0036/iamlive/iamlivecore/mapperclient"
 	"github.com/kenshaw/baseconv"
+	"github.com/otterize/iamlive/iamlivecore/mapperclient"
 	"log"
 	"net/url"
 	"reflect"
@@ -71,7 +71,7 @@ type AzureIAMPolicy struct {
 	AssignableScopes []string `json:"AssignableScopes"`
 }
 
-func loadMaps() {
+func LoadMaps() {
 	if *providerFlag == "aws" {
 		err := json.Unmarshal(bIAMMap, &iamMap)
 

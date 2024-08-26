@@ -29,7 +29,7 @@ var debugFlag *bool
 var forceWildcardResourceFlag *bool
 var cpuProfileFlag = flag.String("cpu-profile", "", "write a CPU profile to this file (for performance testing purposes)")
 
-func parseConfig() {
+func ParseConfig() {
 	provider := "aws"
 	setIni := false
 	profile := "default"
@@ -68,7 +68,7 @@ func parseConfig() {
 }
 
 func Run() {
-	parseConfig()
+	ParseConfig()
 
 	flag.Parse()
 
@@ -99,7 +99,7 @@ func Run() {
 		defer pprof.StopCPUProfile()
 	}
 
-	loadMaps()
-	readServiceFiles()
+	LoadMaps()
+	ReadServiceFiles()
 	createProxy(*bindAddrFlag, *sslBindAddrFlag)
 }

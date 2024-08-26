@@ -1,4 +1,4 @@
-module github.com/iann0036/iamlive
+module github.com/otterize/iamlive
 
 go 1.21
 

@@ -295,7 +295,7 @@ type ServiceDefinitionMetadata struct {
 	UID                 string `json:"uid"`
 }
 
-func readServiceFiles() {
+func ReadServiceFiles() {
 	if *providerFlag == "aws" {
 		files, err := serviceFiles.ReadDir("service")
 		if err != nil {
