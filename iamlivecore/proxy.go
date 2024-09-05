@@ -202,7 +202,7 @@ func createProxy(addr string, sslAddr string) {
 				dumpReq(req)
 			}
 			body, _ = ioutil.ReadAll(req.Body)
-			handleAWSRequest(req, body, 200)
+			HandleAWSRequest(req, body, 200)
 		} else {
 			return req, nil
 		}
@@ -295,7 +295,7 @@ type ServiceDefinitionMetadata struct {
 	UID                 string `json:"uid"`
 }
 
-func readServiceFiles() {
+func ReadServiceFiles() {
 	if *providerFlag == "aws" {
 		files, err := serviceFiles.ReadDir("service")
 		if err != nil {
@@ -366,7 +366,7 @@ type ActionCandidate struct {
 	Service   string
 }
 
-func handleAWSRequest(req *http.Request, body []byte, respCode int) {
+func HandleAWSRequest(req *http.Request, body []byte, respCode int) {
 	host := req.Host
 	uri := req.RequestURI
 

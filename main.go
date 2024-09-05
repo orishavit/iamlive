@@ -3,7 +3,7 @@ package main
 import (
 	_ "embed"
 
-	"github.com/iann0036/iamlive/iamlivecore"
+	"github.com/otterize/iamlive/iamlivecore"
 )
 
 func main() {
