@@ -38,7 +38,7 @@ func ParseConfig() {
 	refreshRate := 0
 	sortAlphabetical := false
 	host := "127.0.0.1"
-	mode := "csm"
+	mode := "proxy"
 	bindAddr := "0.0.0.0:10080"
 	sslBindAddr := "0.0.0.0:10443"
 	caBundle := "~/.iamlive/ca.pem"
