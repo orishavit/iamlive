@@ -9,6 +9,8 @@ require (
 	github.com/inconshreveable/go-vhost v1.0.0
 	github.com/kenshaw/baseconv v0.1.1
 	github.com/mitchellh/go-homedir v1.1.0
+	github.com/oliveagle/jsonpath v0.0.0-20180606110733-2e52cf6e6852
+	github.com/ucarion/urlpath v0.0.0-20200424170820-7ccc79b76bbb
 	k8s.io/api v0.29.0
 	k8s.io/apimachinery v0.29.0
 	k8s.io/client-go v0.29.0

@@ -295,6 +295,16 @@ type ServiceDefinitionMetadata struct {
 	UID                 string `json:"uid"`
 }
 
+type AzureTemplate struct {
+	Resources []AzureTemplateResource `json:"resources"`
+}
+
+type AzureTemplateResource struct {
+	Name       string      `json:"name"`
+	Type       string      `json:"type"`
+	Properties interface{} `json:"properties"`
+}
+
 func ReadServiceFiles() {
 	if *providerFlag == "aws" {
 		files, err := serviceFiles.ReadDir("service")
@@ -706,7 +716,82 @@ func HandleAWSRequest(req *http.Request, body []byte, respCode int) {
 		SrcIP:               strings.Split(req.RemoteAddr, ":")[0],
 	}
 
-	printCallInfo(entry)
+	sendAWSCallInfo(entry)
+}
+
+var azurermregex = regexp.MustCompile(`^/subscriptions/.+/resourcegroups/.+/providers/Microsoft\.Resources/deployments/.+`)
+
+func HandleAzureRequest(req *http.Request, body []byte, respCode int) {
+	host := req.Host
+
+	if host != "management.azure.com" { //} else if host == "management.core.windows.net" {
+		return
+	}
+
+	var entries []AzureEntry
+	entries = append(entries, AzureEntry{
+		HTTPMethod: req.Method,
+		Path:       req.URL.Path,
+		Parameters: req.URL.Query(),
+		Body:       body,
+	})
+
+	// Handle AzureRM deployments (inline only)
+	if req.Method == "PUT" { // TODO: other similar methods
+		if azurermregex.MatchString(req.URL.Path) {
+			data := struct {
+				Properties struct {
+					Template interface{} `json:"template"`
+				} `json:"properties"`
+			}{}
+			err := json.Unmarshal(body, &data)
+			if err != nil {
+				return
+			}
+
+			var template AzureTemplate
+
+			templateString, ok := data.Properties.Template.(string)
+			if ok {
+				err := json.Unmarshal([]byte(templateString), &template)
+				if err != nil {
+					return
+				}
+			} else {
+				templateJSON, _ := json.Marshal(data.Properties.Template)
+				err = json.Unmarshal(templateJSON, &template)
+				if err != nil {
+					return
+				}
+			}
+
+		ResourceLoop:
+			for _, azureResource := range template.Resources {
+				fmt.Println(azureResource.Name)
+				fmt.Println(azureResource.Type)
+
+				for pathName, pathObj := range azureIamMap["PUT"] {
+					for permissionName := range pathObj {
+						if fmt.Sprintf("%s/write", azureResource.Type) == permissionName {
+							resourceJSON, _ := json.Marshal(azureResource)
+
+							entries = append(entries, AzureEntry{
+								HTTPMethod: "PUT",
+								Path:       pathName,
+								Body:       resourceJSON,
+							})
+
+							continue ResourceLoop
+						}
+					}
+				}
+			}
+		}
+	}
+
+	for _, entry := range entries {
+		sendAzureCallInfo(entry)
+	}
 }
 
 func generateMethodTemplate(path string) string {

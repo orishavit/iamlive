@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/kenshaw/baseconv"
+	"github.com/oliveagle/jsonpath"
 	"github.com/otterize/iamlive/iamlivecore/mapperclient"
+	"github.com/ucarion/urlpath"
 	"log"
 	"net/url"
 	"reflect"
@@ -19,16 +21,39 @@ import (
 //go:embed map.json
 var bIAMMap []byte
 
+//go:embed azuremap.json
+var bAzureIAMMap []byte
+
 //go:embed iam_definition.json
 var bIAMSAR []byte
 
 var callLog []Entry
+var azureCallLog []AzureEntry
 
 type AzureEntry struct {
 	HTTPMethod string
 	Path       string
 	Parameters map[string][]string
 	Body       []byte
+}
+
+var azureIamMap azureIamMapBase
+
+type azureIamMapBase map[string]AzurePath
+
+type AzurePath map[string]AzurePermission
+
+type AzurePermission map[string]AzurePermissionDetail
+
+type AzurePermissionDetail struct {
+	Automated    bool           `json:"automated"`
+	IsDataAction bool           `json:"isDataAction"`
+	Condition    AzureCondition `json:"condition"`
+}
+
+type AzureCondition struct {
+	PathEquals     map[string]string `json:"pathEquals"`
+	BodyPathExists string            `json:"bodyPathExists"`
 }
 
 // JSON maps
@@ -72,18 +97,22 @@ type AzureIAMPolicy struct {
 }
 
 func LoadMaps() {
-	if *providerFlag == "aws" {
-		err := json.Unmarshal(bIAMMap, &iamMap)
+	err := json.Unmarshal(bIAMMap, &iamMap)
 
-		if err != nil {
-			log.Fatal(err)
-		}
+	if err != nil {
+		log.Fatal(err)
+	}
 
-		err = json.Unmarshal(bIAMSAR, &iamDef)
+	err = json.Unmarshal(bIAMSAR, &iamDef)
 
-		if err != nil {
-			panic(err)
-		}
+	if err != nil {
+		panic(err)
+	}
+
+	err = json.Unmarshal(bAzureIAMMap, &azureIamMap)
+
+	if err != nil {
+		log.Fatal(err)
 	}
 }
 
@@ -157,7 +186,7 @@ func aggregatePolicy(policy IAMPolicy) IAMPolicy {
 	return policy
 }
 
-func printCallInfo(entry Entry) {
+func sendAWSCallInfo(entry Entry) {
 	statements := getStatementsForProxyCall(entry)
 	graphQLClient := mapperclient.NewClient("http://otterize-network-mapper.otterize-system.svc.cluster.local:9090")
 	var operations []mapperclient.AWSOperation
@@ -175,6 +204,70 @@ func printCallInfo(entry Entry) {
 	}
 
 	_ = graphQLClient.ReportAWSOperation(context.Background(), operations)
+}
+
+func sendAzureCallInfo(entry AzureEntry) {
+	actionsMap := make(map[string]bool)
+	dataActionsMap := make(map[string]bool)
+
+	for pathName, pathObj := range azureIamMap[strings.ToUpper(entry.HTTPMethod)] {
+		pathmatch := urlpath.New(strings.ReplaceAll(strings.ReplaceAll(pathName, "{", ":"), "}", ""))
+		pathmatchdata, ok := pathmatch.Match(entry.Path)
+		if ok {
+		PermissionLoop:
+			for permissionName, permissionObj := range pathObj {
+				if permissionObj.Condition.BodyPathExists != "" {
+					var jsondata interface{}
+					json.Unmarshal(entry.Body, &jsondata)
+					_, err := jsonpath.JsonPathLookup(jsondata, permissionObj.Condition.BodyPathExists)
+					if err != nil {
+						continue PermissionLoop
+					}
+				}
+				for pathName, pathValue := range permissionObj.Condition.PathEquals {
+					if pathmatchdata.Params[pathName] != pathValue {
+						continue PermissionLoop
+					}
+				}
+				if permissionObj.IsDataAction {
+					dataActionsMap[permissionName] = true
+				} else {
+					actionsMap[permissionName] = true
+				}
+			}
+		}
+	}
+
+	actionsList := make([]string, len(actionsMap))
+	i := 0
+	for k := range actionsMap {
+		actionsList[i] = k
+		i++
+	}
+	sort.Strings(actionsList)
+
+	dataActionsList := make([]string, len(dataActionsMap))
+	i = 0
+	for k := range dataActionsMap {
+		dataActionsList[i] = k
+		i++
+	}
+	sort.Strings(dataActionsList)
+
+	returnPolicy := AzureIAMPolicy{
+		Actions:          actionsList,
+		DataActions:      dataActionsList,
+		NotDataActions:   make([]string, 0),
+		AssignableScopes: make([]string, 0),
+		IsCustom:         true,
+	}
+
+	doc, err := json.MarshalIndent(returnPolicy, "", "    ")
+	if err != nil {
+		panic(err)
+	}
+
+	log.Printf("Azure Policy: %s", doc)
 }
 
 type iamMapMethod struct {
