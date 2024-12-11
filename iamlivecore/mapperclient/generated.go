@@ -6,12 +6,14 @@ import (
 	"context"
 
 	"github.com/Khan/genqlient/graphql"
+	"github.com/otterize/nilable"
 )
 
 type AWSOperation struct {
-	Resource string   `json:"resource"`
-	Actions  []string `json:"actions"`
-	SrcIp    string   `json:"srcIp"`
+	Resource string                          `json:"resource"`
+	Actions  []string                        `json:"actions"`
+	SrcIp    nilable.Nilable[string]         `json:"srcIp"`
+	Client   nilable.Nilable[NamespacedName] `json:"client"`
 }
 
 // GetResource returns AWSOperation.Resource, and is useful for accessing the field via an interface.
@@ -21,7 +23,21 @@ func (v *AWSOperation) GetResource() string { return v.Resource }
 func (v *AWSOperation) GetActions() []string { return v.Actions }
 
 // GetSrcIp returns AWSOperation.SrcIp, and is useful for accessing the field via an interface.
-func (v *AWSOperation) GetSrcIp() string { return v.SrcIp }
+func (v *AWSOperation) GetSrcIp() nilable.Nilable[string] { return v.SrcIp }
+
+// GetClient returns AWSOperation.Client, and is useful for accessing the field via an interface.
+func (v *AWSOperation) GetClient() nilable.Nilable[NamespacedName] { return v.Client }
+
+type NamespacedName struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
+// GetName returns NamespacedName.Name, and is useful for accessing the field via an interface.
+func (v *NamespacedName) GetName() string { return v.Name }
+
+// GetNamespace returns NamespacedName.Namespace, and is useful for accessing the field via an interface.
+func (v *NamespacedName) GetNamespace() string { return v.Namespace }
 
 // __reportAWSOperationInput is used internally by genqlient
 type __reportAWSOperationInput struct {
@@ -39,32 +55,35 @@ type reportAWSOperationResponse struct {
 // GetReportAWSOperation returns reportAWSOperationResponse.ReportAWSOperation, and is useful for accessing the field via an interface.
 func (v *reportAWSOperationResponse) GetReportAWSOperation() bool { return v.ReportAWSOperation }
 
-func reportAWSOperation(
-	ctx context.Context,
-	client graphql.Client,
-	operation []AWSOperation,
-) (*reportAWSOperationResponse, error) {
-	req := &graphql.Request{
-		OpName: "reportAWSOperation",
-		Query: `
+// The query or mutation executed by reportAWSOperation.
+const reportAWSOperation_Operation = `
 mutation reportAWSOperation ($operation: [AWSOperation!]!) {
 	reportAWSOperation(operation: $operation)
 }
-`,
+`
+
+func reportAWSOperation(
+	ctx_ context.Context,
+	client_ graphql.Client,
+	operation []AWSOperation,
+) (*reportAWSOperationResponse, error) {
+	req_ := &graphql.Request{
+		OpName: "reportAWSOperation",
+		Query:  reportAWSOperation_Operation,
 		Variables: &__reportAWSOperationInput{
 			Operation: operation,
 		},
 	}
-	var err error
+	var err_ error
 
-	var data reportAWSOperationResponse
-	resp := &graphql.Response{Data: &data}
+	var data_ reportAWSOperationResponse
+	resp_ := &graphql.Response{Data: &data_}
 
-	err = client.MakeRequest(
-		ctx,
-		req,
-		resp,
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
 	)
 
-	return &data, err
+	return &data_, err_
 }

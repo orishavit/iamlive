@@ -1,6 +1,8 @@
 module github.com/otterize/iamlive
 
-go 1.21
+go 1.22.1
+
+toolchain go1.23.4
 
 require (
 	github.com/Khan/genqlient v0.6.0
@@ -9,6 +11,7 @@ require (
 	github.com/inconshreveable/go-vhost v1.0.0
 	github.com/kenshaw/baseconv v0.1.1
 	github.com/mitchellh/go-homedir v1.1.0
+	github.com/otterize/nilable v0.0.0-20240410132629-f242bb6f056f
 	k8s.io/api v0.29.0
 	k8s.io/apimachinery v0.29.0
 	k8s.io/client-go v0.29.0

@@ -5,6 +5,8 @@ input Destination {
     destination: String!
     # If destination is a hostname, this _may_ be the IP it resolves to if it is known, but is not required.
     destinationIP: String
+    destinationPort: Int
+    TTL: Int
     lastSeen: Time!
 }
 
@@ -15,6 +17,10 @@ input RecordedDestinationsForSrc {
 }
 
 input CaptureResults {
+    results: [RecordedDestinationsForSrc!]!
+}
+
+input CaptureTCPResults {
     results: [RecordedDestinationsForSrc!]!
 }
 
@@ -33,10 +39,22 @@ type GroupVersionKind {
     kind: String!
 }
 
+type IdentityResolutionData {
+    host: String
+    podHostname: String
+    procfsHostname: String
+    port: Int
+    isService: Boolean
+    uptime: String
+    lastSeen: String
+    extraInfo: String
+}
+
 type OtterizeServiceIdentity {
     name: String!
     namespace: String!
     labels: [PodLabel!]
+    resolutionData: IdentityResolutionData
     """
     If the service identity was resolved from a pod owner, the GroupVersionKind of the pod owner.
     """
@@ -95,6 +113,7 @@ type Intent {
     client: OtterizeServiceIdentity!
     server: OtterizeServiceIdentity!
     type: IntentType
+    resolutionData: String
     kafkaTopics: [KafkaConfig!]
     httpResources: [HttpResource!]
     awsActions: [String!]
@@ -122,6 +141,7 @@ input IstioConnection {
     srcWorkload: String!
     srcWorkloadNamespace: String!
     dstWorkload: String!
+    dstServiceName: String!
     dstWorkloadNamespace: String!
     path: String!
     methods: [HttpMethod!]!
@@ -132,15 +152,29 @@ input IstioConnectionResults {
     results: [IstioConnection!]!
 }
 
+input NamespacedName {
+    name: String!
+    namespace: String!
+}
+
 input AWSOperation {
     resource: String!
     actions: [String!]!
-    srcIp: String!
+    srcIp: String
+    client: NamespacedName
 }
 
 input ServerFilter {
     name: String!
     namespace: String!
+}
+
+input AzureOperation {
+    scope: String!
+    actions: [String!]!
+    dataActions: [String!]!
+    clientName: String!
+    clientNamespace: String!
 }
 
 type Query {
@@ -174,8 +208,10 @@ type Query {
 type Mutation {
     resetCapture: Boolean!
     reportCaptureResults(results: CaptureResults!): Boolean!
+    reportTCPCaptureResults(results: CaptureTCPResults!): Boolean!
     reportSocketScanResults(results: SocketScanResults!): Boolean!
     reportKafkaMapperResults(results: KafkaMapperResults!): Boolean!
     reportIstioConnectionResults(results: IstioConnectionResults!): Boolean!
     reportAWSOperation(operation: [AWSOperation!]!): Boolean!
+    reportAzureOperation(operation: [AzureOperation!]!): Boolean!
 }
