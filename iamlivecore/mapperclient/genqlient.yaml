@@ -3,3 +3,5 @@ schema:
 operations:
   - genqlient.graphql
 generated: generated.go
+optional: generic
+optional_generic_type: github.com/otterize/nilable.Nilable

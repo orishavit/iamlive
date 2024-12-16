@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/kenshaw/baseconv"
 	"github.com/otterize/iamlive/iamlivecore/mapperclient"
+	"github.com/otterize/nilable"
 	"log"
 	"net/url"
 	"reflect"
@@ -46,6 +47,7 @@ type Entry struct {
 	FinalHTTPStatusCode int    `json:"FinalHttpStatusCode"`
 	AccessKey           string `json:"AccessKey"`
 	SrcIP               string `json:"SrcIp"`
+	ClientIdentity      *NamespacedName
 }
 
 // Statement is a single statement within an IAM policy
@@ -164,13 +166,20 @@ func printCallInfo(entry Entry) {
 
 	for _, statement := range statements {
 		for _, resource := range statement.Resource {
-			log.Printf("Reporting %s %s %s", statement.Action, resource, entry.SrcIP)
-
-			operations = append(operations, mapperclient.AWSOperation{
+			operation := mapperclient.AWSOperation{
 				Resource: resource,
 				Actions:  statement.Action,
-				SrcIp:    entry.SrcIP,
-			})
+				SrcIp:    nilable.From(entry.SrcIP),
+			}
+
+			if entry.ClientIdentity != nil {
+				operation.Client = nilable.From(mapperclient.NamespacedName{
+					Namespace: entry.ClientIdentity.Namespace,
+					Name:      entry.ClientIdentity.Name,
+				})
+			}
+
+			operations = append(operations)
 		}
 	}
 
