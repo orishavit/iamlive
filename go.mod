@@ -1,8 +1,6 @@
 module github.com/otterize/iamlive
 
-go 1.22.1
-
-toolchain go1.23.4
+go 1.23.4
 
 require (
 	github.com/Khan/genqlient v0.6.0
