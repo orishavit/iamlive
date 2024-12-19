@@ -179,7 +179,7 @@ func printCallInfo(entry Entry) {
 				})
 			}
 
-			operations = append(operations)
+			operations = append(operations, operation)
 		}
 	}
 
