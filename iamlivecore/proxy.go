@@ -375,6 +375,8 @@ func HandleAWSRequest(req *http.Request, body []byte, respCode int, clientIdenti
 	host := req.Host
 	uri := req.RequestURI
 
+	log.Printf("iamlive: Handling AWS request %s %s", req.Method, uri)
+
 	var endpointUriPrefix string
 	var service string
 
