@@ -180,7 +180,7 @@ func printCallInfo(entry Entry) {
 			}
 
 			fmt.Printf("Reporting operation to mapper: %+v\n", operation)
-			operations = append(operations)
+			operations = append(operations, operation)
 		}
 	}
 
