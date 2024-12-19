@@ -179,11 +179,11 @@ func printCallInfo(entry Entry) {
 				})
 			}
 
-			fmt.Printf("**** op: %v\n", operation)
 			operations = append(operations)
 		}
 	}
 
+	fmt.Printf("Reporting operations to mapper: %+v\n", operations)
 	_ = graphQLClient.ReportAWSOperation(context.Background(), operations)
 }
 
