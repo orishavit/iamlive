@@ -179,7 +179,7 @@ func printCallInfo(entry Entry) {
 				})
 			}
 
-			fmt.Printf("**** Resource: %s\n", resource)
+			fmt.Printf("**** op: %v\n", operation)
 			operations = append(operations)
 		}
 	}
